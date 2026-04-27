@@ -1,0 +1,108 @@
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: nevup-db
+    environment:
+      POSTGRES_USER: nevup
+      POSTGRES_PASSWORD: secret
+      POSTGRES_DB: nevup
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./migrations/001_schema.sql:/docker-entrypoint-initdb.d/001_schema.sql
+      - ./migrations/002_seed.sql:/docker-entrypoint-initdb.d/002_seed.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nevup -d nevup"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: nevup-redis
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  kafka:
+    image: confluentinc/cp-kafka:7.6.0
+    container_name: nevup-kafka
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:29092,CONTROLLER://0.0.0.0:9093,EXTERNAL://0.0.0.0:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,EXTERNAL://localhost:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qk"
+    ports:
+      - "9092:9092"
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics --bootstrap-server localhost:29092 --list || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: nevup-api
+    environment:
+      DATABASE_URL: postgresql://nevup:secret@db:5432/nevup
+      REDIS_URL: redis://redis:6379
+      KAFKA_BROKER: kafka:29092
+      JWT_SECRET: 97791d4db2aa5f689c3cc39356ce35762f0a73aa70923039d8ef72a2840a1b02
+      NODE_ENV: production
+      PORT: "4010"
+      LOG_LEVEL: info
+      QUEUE_PROVIDER: kafka
+    ports:
+      - "4010:4010"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    restart: unless-stopped
+
+  analytics-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: nevup-worker
+    command: ["node", "dist/workers/analyticsWorker.js"]
+    environment:
+      DATABASE_URL: postgresql://nevup:secret@db:5432/nevup
+      REDIS_URL: redis://redis:6379
+      KAFKA_BROKER: kafka:29092
+      JWT_SECRET: 97791d4db2aa5f689c3cc39356ce35762f0a73aa70923039d8ef72a2840a1b02
+      NODE_ENV: production
+      LOG_LEVEL: info
+      QUEUE_PROVIDER: kafka
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  pgdata:

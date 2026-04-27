@@ -1,0 +1,50 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nevup-worker
+  labels:
+    app: nevup-worker
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: nevup-worker
+  template:
+    metadata:
+      labels:
+        app: nevup-worker
+    spec:
+      containers:
+        - name: worker
+          image: nevup-backend:latest
+          command: ["node", "dist/workers/analyticsWorker.js"]
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: nevup-secrets
+                  key: database-url
+            - name: REDIS_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: nevup-config
+                  key: redis-url
+            - name: KAFKA_BROKER
+              valueFrom:
+                configMapKeyRef:
+                  name: nevup-config
+                  key: kafka-broker
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: nevup-secrets
+                  key: jwt-secret
+            - name: NODE_ENV
+              value: "production"
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"

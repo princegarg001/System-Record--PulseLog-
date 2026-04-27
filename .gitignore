@@ -1,0 +1,7 @@
+node_modules/
+dist/
+coverage/
+.env
+*.log
+k6/report.html
+.DS_Store

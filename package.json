@@ -1,0 +1,56 @@
+{
+  "name": "nevup-backend",
+  "version": "1.0.0",
+  "description": "NevUp AI Trading Coach — Track 1: System of Record Backend",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx watch src/index.ts",
+    "worker": "tsx src/workers/analyticsWorker.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "lint": "eslint src/ --ext .ts",
+    "format": "prettier --write \"src/**/*.ts\"",
+    "migrate": "tsx src/db/migrate.ts",
+    "seed": "tsx src/db/seed.ts",
+    "generate-token": "tsx src/utils/generateToken.ts"
+  },
+  "dependencies": {
+    "fastify": "^4.28.1",
+    "@fastify/cors": "^9.0.1",
+    "@fastify/helmet": "^11.1.1",
+    "@fastify/compress": "^7.0.3",
+    "@fastify/swagger": "^8.15.0",
+    "@fastify/swagger-ui": "^4.1.0",
+    "pg": "^8.12.0",
+    "kafkajs": "^2.2.4",
+    "ioredis": "^5.4.1",
+    "jose": "^5.9.3",
+    "pino": "^9.4.0",
+    "pino-pretty": "^11.2.2",
+    "ajv": "^8.17.1",
+    "ajv-formats": "^3.0.1",
+    "uuid": "^10.0.0",
+    "dotenv": "^16.4.5",
+    "prom-client": "^15.1.3"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.4",
+    "tsx": "^4.19.1",
+    "@types/node": "^20.14.15",
+    "@types/pg": "^8.11.6",
+    "@types/uuid": "^10.0.0",
+    "vitest": "^2.0.5",
+    "supertest": "^7.0.0",
+    "@types/supertest": "^6.0.2",
+    "eslint": "^9.9.0",
+    "@typescript-eslint/eslint-plugin": "^8.1.0",
+    "@typescript-eslint/parser": "^8.1.0",
+    "prettier": "^3.3.3"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
