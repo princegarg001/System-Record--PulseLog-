@@ -53,76 +53,137 @@ These principles are enforced at every layer and cannot be violated:
 
 ## 🏗️ System Architecture
 
+### High-Level Data Flow
+
+```mermaid
+flowchart TB
+    subgraph CLIENT["🖥️ CLIENT / MOBILE APP"]
+        C[Trade Submission]
+    end
+
+    subgraph API["⚡ FASTIFY API SERVER — p95 ≤ 150ms"]
+        direction LR
+        JWT["🔑 JWT Auth\n(HS256, 0s tolerance)"]
+        TEN["🛡️ Tenancy Guard\n(sub ≠ userId → 403)"]
+        ROUTES["📡 API Routes\nPOST /trades\nGET /metrics\nGET /sessions"]
+        PROM["📊 Prometheus\n6 custom metrics"]
+        JWT --> TEN --> ROUTES
+    end
+
+    subgraph STORAGE["💾 DATA LAYER"]
+        direction LR
+        PG["🐘 PostgreSQL 15\n7 tables • 6 RLS policies\nGENERATED columns\nset_config(true) tx-local"]
+        KAFKA["📨 Apache Kafka\nKRaft Mode\ntrade.closed topic\nGZIP compression"]
+    end
+
+    subgraph WORKER["⚙️ ANALYTICS WORKER"]
+        direction TB
+        P1["Phase 1 — Parallel"]
+        M1["M1 Plan Adherence\n10-trade rolling avg"]
+        M4["M4 Win by Emotion\natomic JSONB update"]
+        M5["M5 Overtrading\nRedis ZADD/ZCARD"]
+        P2["Phase 2 — Sequential"]
+        M2["M2 Revenge Flag\n90s + emotion check"]
+        M3["M3 Session Tilt\nLAG window function"]
+        DLQ["☠️ Dead Letter Queue\ntrade.closed.dlq"]
+        P1 --- M1 & M4 & M5
+        M1 & M4 & M5 --> P2
+        P2 --- M2 & M3
+    end
+
+    subgraph CACHE["🔴 REDIS 7"]
+        REDIS["Sorted Set\n30-min sliding window\nO(log N) per trade"]
+    end
+
+    C -->|"HTTPS + JWT Bearer"| API
+    ROUTES -->|"INSERT ON CONFLICT\nDO NOTHING"| PG
+    ROUTES -.->|"🔥 fire-and-forget\n(never awaited)"| KAFKA
+    KAFKA -->|"consume"| WORKER
+    M5 <-->|"ZADD/ZCARD"| REDIS
+    M2 & M3 -->|"UPDATE"| PG
+    WORKER -.->|"on failure"| DLQ
+
+    style CLIENT fill:#1a1a2e,stroke:#e94560,color:#fff
+    style API fill:#16213e,stroke:#0f3460,color:#fff
+    style STORAGE fill:#1a1a2e,stroke:#533483,color:#fff
+    style WORKER fill:#0f3460,stroke:#e94560,color:#fff
+    style CACHE fill:#1a1a2e,stroke:#dc382d,color:#fff
 ```
-┌──────────────────────────────────────────────────────────────────────┐
-│                          CLIENT / MOBILE APP                         │
-└───────────────────────────────┬──────────────────────────────────────┘
-                                │ HTTPS + JWT Bearer
-                                ▼
-┌──────────────────────────────────────────────────────────────────────┐
-│                         FASTIFY API SERVER                           │
-│  ┌─────────────┐  ┌──────────────┐  ┌────────────────────────────┐  │
-│  │  JWT Auth    │→ │  Tenancy     │→ │  OpenAPI Validated Routes  │  │
-│  │  (HS256)     │  │  Middleware   │  │  POST/GET /trades          │  │
-│  │  0s clock    │  │  sub≠userId  │  │  GET /users/:id/metrics    │  │
-│  │  tolerance   │  │  → 403       │  │  GET /sessions/:id         │  │
-│  └─────────────┘  └──────────────┘  └──────────┬─────────────────┘  │
-│                                                  │                    │
-│  ┌──────────────────────────────────┐            │                    │
-│  │  Prometheus Metrics Collector    │       WRITE PATH                │
-│  │  http_requests_total             │       (p95 ≤ 150ms)            │
-│  │  http_request_duration_ms        │            │                    │
-│  │  trades_ingested_total           │            │                    │
-│  └──────────────────────────────────┘            │                    │
-└──────────────────────────────────────────────────┼────────────────────┘
-                                                   │
-                    ┌──────────────────────────────┼──────────────────┐
-                    │                              ▼                   │
-                    │  ┌─────────────────────────────────────────┐    │
-                    │  │          PostgreSQL 15 (RLS)             │    │
-                    │  │  ┌─────────┐ ┌──────────┐ ┌──────────┐ │    │
-                    │  │  │ trades  │ │ sessions │ │user_metrics│ │    │
-                    │  │  │ (RLS)   │ │ (RLS)    │ │  (RLS)   │ │    │
-                    │  │  └─────────┘ └──────────┘ └──────────┘ │    │
-                    │  │  set_config('app.current_user_id',      │    │
-                    │  │              userId, true) ← tx-local   │    │
-                    │  └─────────────────────────────────────────┘    │
-                    │                              │                   │
-                    │              fire-and-forget  │ (never awaited)  │
-                    │                              ▼                   │
-                    │  ┌─────────────────────────────────────────┐    │
-                    │  │     Apache Kafka (KRaft Mode)            │    │
-                    │  │     Topic: trade.closed                  │    │
-                    │  │     Compression: GZIP                    │    │
-                    │  └──────────────────┬──────────────────────┘    │
-                    └─────────────────────┼──────────────────────────┘
-                                          │
-                                          ▼
-┌──────────────────────────────────────────────────────────────────────┐
-│                      ANALYTICS WORKER (Consumer)                     │
-│                                                                      │
-│  ┌─── Phase 1: Parallel ────────────────────────────────────────┐   │
-│  │  M1 Plan Adherence    M4 Win/Emotion    M5 Overtrading       │   │
-│  │  (10-trade rolling)   (JSONB atomic)    (Redis ZADD/ZCARD)   │   │
-│  └──────────────────────────────────────────────────────────────┘   │
-│                              │                                       │
-│  ┌─── Phase 2: Sequential (depends on Phase 1) ────────────────┐   │
-│  │  M2 Revenge Flag (90s window + emotion)                      │   │
-│  │  M3 Session Tilt (LAG window function)                       │   │
-│  └──────────────────────────────────────────────────────────────┘   │
-│                              │                                       │
-│  ┌─── Error Handling ───────┴───────────────────────────────────┐   │
-│  │  Failed messages → Dead Letter Queue (trade.closed.dlq)      │   │
-│  └──────────────────────────────────────────────────────────────┘   │
-└──────────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-                 ┌────────────────────────┐
-                 │    Redis 7 (Cache)     │
-                 │  Sorted Set Sliding    │
-                 │  Window (30-min TTL)   │
-                 │  O(log N) per trade    │
-                 └────────────────────────┘
+
+### Request Lifecycle — Trade Ingestion
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant C as 📱 Client
+    participant F as ⚡ Fastify
+    participant A as 🔑 Auth Middleware
+    participant T as 🛡️ Tenancy Guard
+    participant DB as 🐘 PostgreSQL (RLS)
+    participant K as 📨 Kafka
+
+    C->>F: POST /trades {tradeId, userId, ...}
+    F->>A: Verify JWT (HS256)
+    A->>A: Check expiry, role, clock tolerance (0s)
+    A-->>F: ✅ Decoded payload {sub, role}
+
+    F->>T: Compare JWT.sub vs body.userId
+    alt sub ≠ userId
+        T-->>C: ❌ 403 "Cross-tenant access denied."
+    end
+
+    F->>DB: SET app.current_user_id (tx-local)
+    F->>DB: INSERT ... ON CONFLICT (trade_id) DO NOTHING
+
+    alt New trade (rowCount = 1)
+        DB-->>F: ✅ Trade created
+        F-->>C: 201 Created {status: "created", pnl: 38.50}
+        F--)K: 🔥 fire-and-forget publish (trade.closed)
+    else Duplicate (rowCount = 0)
+        DB-->>F: No-op
+        F->>DB: SELECT existing trade
+        F-->>C: 200 OK {status: "existing"}
+    end
+
+    Note over F,K: Kafka publish is NEVER awaited<br/>Write path stays under 150ms
+```
+
+### Metrics Pipeline — Worker Processing
+
+```mermaid
+flowchart LR
+    subgraph CONSUME["📨 Kafka Consumer"]
+        EVENT["trade.closed\nevent"]
+    end
+
+    subgraph PHASE1["⚡ Phase 1 — Parallel Execution"]
+        direction TB
+        M1["🎯 M1\nPlan Adherence\nAVG(last 10 scores)"]
+        M4["🧠 M4\nWin Rate by Emotion\njsonb_set() atomic"]
+        M5["⏱️ M5\nOvertrading\nRedis sorted set"]
+    end
+
+    subgraph PHASE2["🔗 Phase 2 — Sequential"]
+        direction TB
+        M2["💢 M2\nRevenge Flag\n90s gap + emotion"]
+        M3["📉 M3\nSession Tilt\nLAG() window fn"]
+    end
+
+    subgraph OUTPUT["💾 Results"]
+        DB2["PostgreSQL\nuser_metrics\nsession_metrics\ntrades"]
+        ALERT["🚨 Alerts\ntrade.alerts topic"]
+    end
+
+    EVENT --> M1 & M4 & M5
+    M1 & M4 & M5 --> M2
+    M2 --> M3
+    M3 --> DB2
+    M5 -->|"> 10 trades/30min"| ALERT
+
+    style CONSUME fill:#1a1a2e,stroke:#e94560,color:#fff
+    style PHASE1 fill:#16213e,stroke:#0f3460,color:#fff
+    style PHASE2 fill:#0f3460,stroke:#533483,color:#fff
+    style OUTPUT fill:#1a1a2e,stroke:#00b894,color:#fff
 ```
 
 ---
@@ -139,33 +200,38 @@ Each metric targets a specific psychological pathology that causes traders to lo
 | **M4** | **Emotional Edge** | Atomic `jsonb_set()` incrementing win/loss counters per emotion | `user_metrics.win_rate_by_emotion` JSONB |
 | **M5** | **Frantic Overtrading** | Redis `ZADD` + `ZRANGEBYSCORE` + `ZCARD` in 30-min sliding window. Flag fires on **11th trade** (>10, not ≥10) | `events` table + `alerts` |
 
-### Pipeline Execution Order
-```
-Trade Event Consumed
-        │
-        ├──► [Parallel]  M1 Plan Adherence
-        ├──► [Parallel]  M4 Win Rate by Emotion
-        ├──► [Parallel]  M5 Overtrading Check
-        │
-        └──► [Sequential — after Phase 1]
-                ├──► M2 Revenge Trade Detection
-                └──► M3 Session Tilt Calculation
-```
-
 ---
 
 ## 🔐 Defense-in-Depth Security Model
 
-```
-Layer 1: Network          │ TLS termination at load balancer
-Layer 2: Authentication   │ JWT HS256 (jose library, 0s clock tolerance)
-Layer 3: Authorization    │ Middleware: JWT sub ≠ URL userId → 403 FORBIDDEN
-Layer 4: Database          │ PostgreSQL RLS policies on ALL user-scoped tables
-Layer 5: Transaction      │ set_config('app.current_user_id', userId, true)
-                           │ ↑ is_local=true prevents leakage across pooled connections
+```mermaid
+flowchart TB
+    subgraph L1["🌐 Layer 1: Network"]
+        TLS["TLS termination at load balancer"]
+    end
+    subgraph L2["🔑 Layer 2: Authentication"]
+        JWT2["JWT HS256 verification\njose library • 0s clock tolerance\n24h expiry • role validation"]
+    end
+    subgraph L3["🛡️ Layer 3: Authorization"]
+        TENANT["Tenancy Middleware\nJWT sub ≠ URL userId\n→ 403 FORBIDDEN (never 404)"]
+    end
+    subgraph L4["🐘 Layer 4: Database"]
+        RLS["PostgreSQL RLS Policies\nALL user-scoped tables\nImpossible to bypass from app code"]
+    end
+    subgraph L5["🔒 Layer 5: Transaction"]
+        CONFIG["set_config('app.current_user_id', userId, true)\nis_local = true → prevents leakage\nacross pooled connections"]
+    end
+
+    L1 --> L2 --> L3 --> L4 --> L5
+
+    style L1 fill:#2d3436,stroke:#636e72,color:#fff
+    style L2 fill:#2d3436,stroke:#0984e3,color:#fff
+    style L3 fill:#2d3436,stroke:#e17055,color:#fff
+    style L4 fill:#2d3436,stroke:#6c5ce7,color:#fff
+    style L5 fill:#2d3436,stroke:#00b894,color:#fff
 ```
 
-**Why 403 and never 404?** Returning 404 for cross-tenant access leaks information about resource existence. We always return 403 with the exact message: `"Cross-tenant access denied."` — regardless of whether the resource exists.
+> **Why 403 and never 404?** Returning 404 for cross-tenant access leaks information about resource existence. We always return 403 with the exact message: `"Cross-tenant access denied."` — regardless of whether the resource exists.
 
 ---
 
