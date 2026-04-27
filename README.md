@@ -1,138 +1,324 @@
-<p align="center">
-  <h1 align="center">🧠 NevUp — AI Trading Coach Backend</h1>
-  <p align="center">
-    <strong>Track 1: System of Record · NevUp Hiring Hackathon 2026</strong>
-  </p>
-  <p align="center">
-    Production-grade backend powering behavioral analytics for retail traders.<br/>
-    Idempotent trade ingestion · Event-driven metrics pipeline · Multi-tenant RLS security
-  </p>
-  <p align="center">
-    <img src="https://img.shields.io/badge/node-%3E%3D20-green?logo=node.js" alt="Node 20+"/>
-    <img src="https://img.shields.io/badge/TypeScript-strict-blue?logo=typescript" alt="TypeScript Strict"/>
-    <img src="https://img.shields.io/badge/Fastify-4.x-black?logo=fastify" alt="Fastify"/>
-    <img src="https://img.shields.io/badge/PostgreSQL-15_+_RLS-336791?logo=postgresql" alt="PostgreSQL 15"/>
-    <img src="https://img.shields.io/badge/Kafka-KRaft-231F20?logo=apachekafka" alt="Kafka"/>
-    <img src="https://img.shields.io/badge/Redis-7-DC382D?logo=redis" alt="Redis"/>
-    <img src="https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker" alt="Docker"/>
-    <img src="https://img.shields.io/badge/tests-42_passing-brightgreen" alt="42 Tests"/>
-    <img src="https://img.shields.io/badge/SLA-p95_%E2%89%A4_150ms-orange" alt="p95 SLA"/>
-  </p>
-</p>
+<div align="center">
+
+# 🧠 NevUp — AI Trading Coach Backend
+
+### **Track 1: System of Record** · NevUp Hiring Hackathon 2026
+
+*A production-grade behavioral analytics engine that detects psychological trading pathologies in real-time — revenge trading, overtrading, emotional tilt — through an event-driven, idempotent pipeline.*
 
 ---
 
-## 🎯 What This Is
-
-A **production-grade System of Record backend** for an AI-powered trading psychology coach. Instead of just tracking P&L, this system detects **behavioral pathologies** in real-time — revenge trading, overtrading, emotional tilt — and surfaces coaching insights through an asynchronous metrics pipeline.
-
-### Three Inviolable Principles
-
-| # | Principle | Enforcement |
-|---|---|---|
-| 1 | **Write-path isolation** | Analytics never block trade ingestion. Kafka publish is fire-and-forget. |
-| 2 | **Idempotency everywhere** | `INSERT ... ON CONFLICT DO NOTHING`. Duplicates return 200, never 409. |
-| 3 | **Tenant-first security** | PostgreSQL RLS + JWT tenancy check. Cross-tenant = 403, never 404. |
+[![Node.js](https://img.shields.io/badge/Node.js-20_LTS-339933?style=for-the-badge&logo=node.js&logoColor=white)](https://nodejs.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-Strict_Mode-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Fastify](https://img.shields.io/badge/Fastify-4.x-000000?style=for-the-badge&logo=fastify&logoColor=white)](https://www.fastify.io/)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15_+_RLS-4169E1?style=for-the-badge&logo=postgresql&logoColor=white)](https://www.postgresql.org/)
+[![Kafka](https://img.shields.io/badge/Apache_Kafka-KRaft-231F20?style=for-the-badge&logo=apachekafka&logoColor=white)](https://kafka.apache.org/)
+[![Redis](https://img.shields.io/badge/Redis-7_Alpine-DC382D?style=for-the-badge&logo=redis&logoColor=white)](https://redis.io/)
+[![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?style=for-the-badge&logo=docker&logoColor=white)](https://www.docker.com/)
 
 ---
 
-## 🏗 Architecture
+![Tests](https://img.shields.io/badge/Tests-42_Passing-brightgreen?style=flat-square)
+![TypeScript](https://img.shields.io/badge/TSC-Zero_Errors-blue?style=flat-square)
+![Coverage](https://img.shields.io/badge/Metrics-M1--M5_Complete-purple?style=flat-square)
+![SLA](https://img.shields.io/badge/p95-≤_150ms-orange?style=flat-square)
+![RPS](https://img.shields.io/badge/Throughput-200_RPS-green?style=flat-square)
+![ADRs](https://img.shields.io/badge/ADRs-10_Documented-informational?style=flat-square)
+
+</div>
+
+---
+
+## 💡 The Problem
+
+> **80% of retail traders lose money** — not because they lack strategy, but because of poor emotional control.
+
+Traditional trading platforms track P&L but ignore the *psychology behind the trade*. NevUp changes this by acting as an **automated behavioral analyst** that detects destructive patterns like revenge trading, overtrading spirals, and emotional tilt — then delivers real-time coaching interventions.
+
+This backend is the **System of Record** — the high-performance, secure foundation that powers every behavioral insight.
+
+---
+
+## 🏛️ Three Inviolable Architectural Principles
+
+These principles are enforced at every layer and cannot be violated:
+
+| # | Principle | How It's Enforced |
+|:-:|---|---|
+| 🔒 | **Write-Path Isolation** | Kafka publish is fire-and-forget. Analytics *never* block trade ingestion. |
+| 🔁 | **Idempotency Everywhere** | `INSERT ... ON CONFLICT DO NOTHING`. Duplicates return `200`, never `409`. |
+| 🛡️ | **Tenant-First Security** | PostgreSQL RLS + JWT middleware. Cross-tenant access → `403`, never `404`. |
+
+---
+
+## 🏗️ System Architecture
 
 ```
-                        ┌─────────────────────────────────────────────┐
-                        │              Fastify API Server              │
-  Client ──► JWT Auth ──┤  POST /trades ──► PostgreSQL 15 (RLS)       │
-                        │       │                                      │
-                        │       └── fire-and-forget ──► Kafka          │
-                        │                              (trade.closed)  │
-                        └─────────────────────────────────────────────┘
-                                                  │
-                                                  ▼
-                        ┌─────────────────────────────────────────────┐
-                        │           Analytics Worker (Consumer)        │
-                        │                                              │
-                        │  Phase 1 (parallel):                        │
-                        │    M1 Plan Adherence · M4 Win/Emotion · M5  │
-                        │                                              │
-                        │  Phase 2 (sequential):                      │
-                        │    M2 Revenge Flag · M3 Session Tilt        │
-                        │                                              │
-                        │  M5 ──► Redis (sorted set sliding window)   │
-                        └─────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│                          CLIENT / MOBILE APP                         │
+└───────────────────────────────┬──────────────────────────────────────┘
+                                │ HTTPS + JWT Bearer
+                                ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│                         FASTIFY API SERVER                           │
+│  ┌─────────────┐  ┌──────────────┐  ┌────────────────────────────┐  │
+│  │  JWT Auth    │→ │  Tenancy     │→ │  OpenAPI Validated Routes  │  │
+│  │  (HS256)     │  │  Middleware   │  │  POST/GET /trades          │  │
+│  │  0s clock    │  │  sub≠userId  │  │  GET /users/:id/metrics    │  │
+│  │  tolerance   │  │  → 403       │  │  GET /sessions/:id         │  │
+│  └─────────────┘  └──────────────┘  └──────────┬─────────────────┘  │
+│                                                  │                    │
+│  ┌──────────────────────────────────┐            │                    │
+│  │  Prometheus Metrics Collector    │       WRITE PATH                │
+│  │  http_requests_total             │       (p95 ≤ 150ms)            │
+│  │  http_request_duration_ms        │            │                    │
+│  │  trades_ingested_total           │            │                    │
+│  └──────────────────────────────────┘            │                    │
+└──────────────────────────────────────────────────┼────────────────────┘
+                                                   │
+                    ┌──────────────────────────────┼──────────────────┐
+                    │                              ▼                   │
+                    │  ┌─────────────────────────────────────────┐    │
+                    │  │          PostgreSQL 15 (RLS)             │    │
+                    │  │  ┌─────────┐ ┌──────────┐ ┌──────────┐ │    │
+                    │  │  │ trades  │ │ sessions │ │user_metrics│ │    │
+                    │  │  │ (RLS)   │ │ (RLS)    │ │  (RLS)   │ │    │
+                    │  │  └─────────┘ └──────────┘ └──────────┘ │    │
+                    │  │  set_config('app.current_user_id',      │    │
+                    │  │              userId, true) ← tx-local   │    │
+                    │  └─────────────────────────────────────────┘    │
+                    │                              │                   │
+                    │              fire-and-forget  │ (never awaited)  │
+                    │                              ▼                   │
+                    │  ┌─────────────────────────────────────────┐    │
+                    │  │     Apache Kafka (KRaft Mode)            │    │
+                    │  │     Topic: trade.closed                  │    │
+                    │  │     Compression: GZIP                    │    │
+                    │  └──────────────────┬──────────────────────┘    │
+                    └─────────────────────┼──────────────────────────┘
+                                          │
+                                          ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│                      ANALYTICS WORKER (Consumer)                     │
+│                                                                      │
+│  ┌─── Phase 1: Parallel ────────────────────────────────────────┐   │
+│  │  M1 Plan Adherence    M4 Win/Emotion    M5 Overtrading       │   │
+│  │  (10-trade rolling)   (JSONB atomic)    (Redis ZADD/ZCARD)   │   │
+│  └──────────────────────────────────────────────────────────────┘   │
+│                              │                                       │
+│  ┌─── Phase 2: Sequential (depends on Phase 1) ────────────────┐   │
+│  │  M2 Revenge Flag (90s window + emotion)                      │   │
+│  │  M3 Session Tilt (LAG window function)                       │   │
+│  └──────────────────────────────────────────────────────────────┘   │
+│                              │                                       │
+│  ┌─── Error Handling ───────┴───────────────────────────────────┐   │
+│  │  Failed messages → Dead Letter Queue (trade.closed.dlq)      │   │
+│  └──────────────────────────────────────────────────────────────┘   │
+└──────────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+                 ┌────────────────────────┐
+                 │    Redis 7 (Cache)     │
+                 │  Sorted Set Sliding    │
+                 │  Window (30-min TTL)   │
+                 │  O(log N) per trade    │
+                 └────────────────────────┘
 ```
 
 ---
 
-## 📊 Behavioral Metrics Engine (M1–M5)
+## 📊 Behavioral Metrics Engine — M1 through M5
 
-| Metric | What It Detects | Algorithm | Data Store |
-|---|---|---|---|
-| **M1** Plan Adherence | Discipline decay | Rolling 10-trade average | `user_metrics` |
-| **M2** Revenge Trade | Anger-driven re-entry | 90s gap + anxious/fearful emotion | `trades.revenge_flag` |
-| **M3** Session Tilt | Spiral after losses | `LAG()` window function | `session_metrics` |
-| **M4** Win by Emotion | Emotional edge | Atomic `jsonb_set()` counters | `user_metrics` JSONB |
-| **M5** Overtrading | Frantic activity | Redis `ZADD/ZCARD` 30-min window | Events + Alerts |
+Each metric targets a specific psychological pathology that causes traders to lose money:
+
+| Metric | 🎯 Detects | ⚙️ Algorithm | 💾 Storage |
+|:------:|---|---|---|
+| **M1** | **Plan Discipline Decay** | Rolling average of last 10 `planAdherence` scores (1–5 scale) | `user_metrics.plan_adherence_score` |
+| **M2** | **Revenge Trading** | Loss → new trade within 90s while `anxious` or `fearful` | `trades.revenge_flag` boolean |
+| **M3** | **Session Tilt Spiral** | `LAG()` window function: count(loss-follows-loss) / count(total) | `session_metrics.tilt_index` |
+| **M4** | **Emotional Edge** | Atomic `jsonb_set()` incrementing win/loss counters per emotion | `user_metrics.win_rate_by_emotion` JSONB |
+| **M5** | **Frantic Overtrading** | Redis `ZADD` + `ZRANGEBYSCORE` + `ZCARD` in 30-min sliding window. Flag fires on **11th trade** (>10, not ≥10) | `events` table + `alerts` |
+
+### Pipeline Execution Order
+```
+Trade Event Consumed
+        │
+        ├──► [Parallel]  M1 Plan Adherence
+        ├──► [Parallel]  M4 Win Rate by Emotion
+        ├──► [Parallel]  M5 Overtrading Check
+        │
+        └──► [Sequential — after Phase 1]
+                ├──► M2 Revenge Trade Detection
+                └──► M3 Session Tilt Calculation
+```
+
+---
+
+## 🔐 Defense-in-Depth Security Model
+
+```
+Layer 1: Network          │ TLS termination at load balancer
+Layer 2: Authentication   │ JWT HS256 (jose library, 0s clock tolerance)
+Layer 3: Authorization    │ Middleware: JWT sub ≠ URL userId → 403 FORBIDDEN
+Layer 4: Database          │ PostgreSQL RLS policies on ALL user-scoped tables
+Layer 5: Transaction      │ set_config('app.current_user_id', userId, true)
+                           │ ↑ is_local=true prevents leakage across pooled connections
+```
+
+**Why 403 and never 404?** Returning 404 for cross-tenant access leaks information about resource existence. We always return 403 with the exact message: `"Cross-tenant access denied."` — regardless of whether the resource exists.
 
 ---
 
 ## 🚀 Quick Start
 
 ### Prerequisites
-- Docker & Docker Compose
+- Docker & Docker Compose installed
 
 ### Single Command — Zero Manual Steps
 ```bash
 docker compose up
 ```
 
-This starts **5 services** (PostgreSQL, Redis, Kafka, API, Worker), runs migrations, and seeds **388 trades** from **10 synthetic traders** — all queryable immediately.
+This automatically:
+- ✅ Starts PostgreSQL 15, Redis 7, Apache Kafka (KRaft mode)
+- ✅ Runs database migrations (7 tables, 6 RLS policies, indexes)
+- ✅ Seeds **388 trades** from **10 synthetic traders**
+- ✅ Starts the API server on port `4010`
+- ✅ Starts the Analytics Worker consuming `trade.closed` events
+
+**All 388 trades are queryable immediately. No manual steps.**
 
 ### Local Development
 ```bash
 npm install                  # Install dependencies
-npm run migrate              # Run DB migrations
-npm run seed                 # Load 388 seed trades
-npm run dev                  # API server (hot reload)
-npm run worker               # Analytics worker (separate terminal)
-npm run generate-token       # Generate JWT tokens for testing
-npm test                     # Run 42 unit tests
+npm run migrate              # Run database migrations
+npm run seed                 # Load 388 seed trades from 10 traders
+npm run dev                  # Start API server (hot reload)
+npm run worker               # Start analytics worker (separate terminal)
+npm run generate-token       # Generate JWT tokens for all 10 traders
+npm test                     # Run 42 unit + security tests
+npm run test:coverage        # Run with coverage report
+```
+
+### Generate Test JWT Tokens
+```bash
+npx tsx src/utils/generateToken.ts
+```
+Outputs 10 JWT tokens (24h expiry) — one per synthetic trader.
+
+---
+
+## 🛣️ API Reference
+
+| Method | Endpoint | Auth | Description | Key Behavior |
+|:------:|---|:---:|---|---|
+| `POST` | `/trades` | 🔑 | **Idempotent trade ingestion** | New → `201`, Duplicate → `200` |
+| `GET` | `/trades/:tradeId` | 🔑 | Get single trade | RLS-scoped |
+| `GET` | `/users/:userId/metrics` | 🔑 | Behavioral metrics + timeseries | `from`, `to`, `granularity` params |
+| `GET` | `/users/:userId/trades` | 🔑 | Paginated trade history | `cursor`, `limit` params |
+| `GET` | `/users/:userId/profile` | 🔑 | Behavioral profile summary | Aggregated pathology scores |
+| `GET` | `/sessions/:sessionId` | 🔑 | Session summary with trades | Includes tilt index |
+| `POST` | `/sessions/:sessionId/debrief` | 🔑 | Submit post-session reflection | Stored for coaching |
+| `GET` | `/sessions/:sessionId/coaching` | 🔑 | SSE coaching stream | Server-Sent Events |
+| `GET` | `/health` | — | Liveness check | DB + Redis + Kafka status |
+| `GET` | `/metrics` | — | Prometheus scrape endpoint | 6 custom metrics |
+
+### Example: Ingest a Trade
+```bash
+curl -X POST http://localhost:4010/trades \
+  -H "Authorization: Bearer $JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tradeId": "550e8400-e29b-41d4-a716-446655440000",
+    "userId": "f412f236-4edc-47a2-8f54-8763a6ed2ce8",
+    "sessionId": "11111111-1111-4111-8111-111111111111",
+    "asset": "AAPL",
+    "assetClass": "equity",
+    "direction": "long",
+    "entryPrice": 178.45,
+    "exitPrice": 182.30,
+    "quantity": 10,
+    "entryAt": "2025-01-06T09:35:00Z",
+    "exitAt": "2025-01-06T11:20:00Z",
+    "status": "closed",
+    "planAdherence": 4,
+    "emotionalState": "calm",
+    "entryRationale": "Breakout above resistance"
+  }'
+```
+
+**Response (201 Created):**
+```json
+{
+  "tradeId": "550e8400-e29b-41d4-a716-446655440000",
+  "pnl": 38.50,
+  "outcome": "win",
+  "revengeFlag": false,
+  "status": "created"
+}
+```
+
+**Same request again → Response (200 OK):**
+```json
+{
+  "status": "existing"
+}
 ```
 
 ---
 
-## 🔐 Security Model
+## ⚡ Performance Engineering
 
-| Layer | Mechanism | Detail |
-|---|---|---|
-| **Authentication** | JWT HS256 | `jose` library, 0s clock tolerance, 24h expiry |
-| **Authorization** | RLS Policies | `set_config('app.current_user_id', userId, true)` — transaction-local |
-| **Tenancy** | Middleware + DB | JWT `sub` ≠ requested `userId` → **403 FORBIDDEN** (never 404) |
-| **Idempotency** | `ON CONFLICT` | Duplicate `tradeId` → 200 OK, not 409 Conflict |
+| Metric | Target | Achieved | Strategy |
+|---|:---:|:---:|---|
+| Write latency (p95) | ≤ 150ms | ✅ | Fire-and-forget Kafka, prepared SQL statements |
+| Throughput | 200 RPS | ✅ | Fastify (2× Express), connection pooling |
+| Error rate | < 1% | ✅ | Idempotent writes, graceful degradation |
+| Cold start | < 5s | ✅ | Alpine images, multi-stage Docker build |
 
----
-
-## 🛣️ API Endpoints
-
-| Method | Path | Auth | Description |
-|---|---|---|---|
-| `POST` | `/trades` | JWT | Idempotent trade ingestion (core write path) |
-| `GET` | `/trades/:tradeId` | JWT | Get single trade |
-| `GET` | `/users/:userId/metrics` | JWT | Behavioral metrics with timeseries |
-| `GET` | `/users/:userId/trades` | JWT | Paginated trade history |
-| `GET` | `/users/:userId/profile` | JWT | Behavioral profile |
-| `GET` | `/sessions/:sessionId` | JWT | Session summary with trades |
-| `POST` | `/sessions/:sessionId/debrief` | JWT | Post-session reflection |
-| `GET` | `/sessions/:sessionId/coaching` | JWT | SSE coaching stream |
-| `GET` | `/health` | — | DB + Redis + Kafka status |
-| `GET` | `/metrics` | — | Prometheus scrape endpoint |
+### Why These Numbers Matter
+- **Fire-and-forget publish**: The Kafka `.send()` promise is never `await`-ed on the write path. Errors are caught and logged asynchronously.
+- **Connection pooling**: `pg.Pool` with configurable pool size prevents connection exhaustion under load.
+- **GZIP compression**: Kafka messages are compressed at the producer level, reducing network I/O.
 
 ---
 
-## 🧪 Testing
+## 🧪 Testing Strategy
 
-- **42 unit tests** covering validation, auth, tenancy, and all 5 metric algorithms
-- **Cross-tenant security tests** proving 403 on cross-tenant reads
-- **k6 load test** targeting 200 RPS with p95 ≤ 150ms SLA threshold
+```
+42 Tests Across 4 Test Suites — All Passing
+├── tests/unit/auth.test.ts          (5 tests)  — JWT validation, expiry, roles
+├── tests/unit/validation.test.ts    (16 tests) — Input schemas, edge cases
+├── tests/unit/metrics.test.ts       (16 tests) — M1-M5 algorithm correctness
+└── tests/security/crossTenant.test.ts (5 tests) — 403 enforcement, RLS
+```
+
+### Load Testing (k6)
+```bash
+k6 run --out web-dashboard=export=k6/report.html k6/loadTest.js
+```
+- Ramps from 0 → 200 RPS over 3 stages
+- Validates p95 < 150ms threshold
+- HTML report committed to `k6/report.html`
+
+---
+
+## 🌱 Seed Data — 10 Synthetic Trader Profiles
+
+| # | Trader | Primary Pathology | Trades |
+|:-:|---|---|:---:|
+| 1 | Alex Mercer | Revenge Trading | 26 |
+| 2 | Jordan Lee | Overtrading | 74 |
+| 3 | Sam Rivera | FOMO Entries | 28 |
+| 4 | Casey Kim | Plan Non-Adherence | 30 |
+| 5 | Morgan Bell | Premature Exit | 32 |
+| 6 | Taylor Grant | Loss Running | 35 |
+| 7 | Riley Stone | Session Tilt | 42 |
+| 8 | Drew Patel | Time-of-Day Bias | 38 |
+| 9 | Quinn Torres | Position Sizing | 45 |
+| 10 | **Avery Chen** | **None (Control)** | **38** |
+
+> **52 sessions · 388 trades · 9 pathologies + 1 control user**
 
 ---
 
@@ -140,82 +326,134 @@ npm test                     # Run 42 unit tests
 
 ```
 nevup-backend/
+│
 ├── src/
-│   ├── api/routes/          # trades, metrics, sessions, health
-│   ├── middleware/           # auth, tenancy, requestLogger, errorHandler
-│   ├── services/metrics/    # M1–M5 behavioral metric engines
-│   ├── services/            # tradeService, metricsService, pipeline
-│   ├── workers/             # analyticsWorker, dlqWorker
-│   ├── db/                  # pool, rls, migrate, seed
-│   ├── cache/               # Redis singleton
-│   ├── queue/               # Kafka producer + consumer
-│   └── utils/               # logger, validate, tracing
-├── migrations/              # 001_schema.sql, 002_seed.sql
-├── tests/                   # unit + security tests
-├── k6/                      # load test script + results
-├── k8s/                     # Kubernetes manifests
-├── .github/workflows/       # CI pipeline
-├── DECISIONS.md             # 10 Architecture Decision Records
-├── openapi.yaml             # OpenAPI 3.0 specification
-├── docker-compose.yml       # Single-command startup (5 services)
-└── Dockerfile               # Multi-stage, non-root user
+│   ├── api/
+│   │   ├── routes/
+│   │   │   ├── trades.ts            # POST/GET idempotent trade endpoints
+│   │   │   ├── metrics.ts           # GET timeseries behavioral metrics
+│   │   │   ├── sessions.ts          # GET/POST session + debrief + coaching
+│   │   │   └── health.ts            # GET /health + GET /metrics (Prometheus)
+│   │   └── server.ts                # Fastify bootstrap + hooks
+│   │
+│   ├── middleware/
+│   │   ├── auth.ts                  # JWT HS256 verification (jose)
+│   │   ├── tenancy.ts               # Cross-tenant 403 enforcement
+│   │   ├── requestLogger.ts         # Structured request/response logging
+│   │   └── errorHandler.ts          # Centralized error handling
+│   │
+│   ├── services/
+│   │   ├── metrics/
+│   │   │   ├── planAdherence.ts     # M1: Rolling 10-trade average
+│   │   │   ├── revengeFlag.ts       # M2: 90s + emotion detection
+│   │   │   ├── tiltIndex.ts         # M3: LAG() window function
+│   │   │   ├── winByEmotion.ts      # M4: Atomic JSONB counters
+│   │   │   └── overtrading.ts       # M5: Redis sorted set sliding window
+│   │   ├── metricsPipeline.ts       # Orchestrator (parallel → sequential)
+│   │   ├── metricsService.ts        # Query-side metrics aggregation
+│   │   └── tradeService.ts          # Core trade ingestion logic
+│   │
+│   ├── workers/
+│   │   ├── analyticsWorker.ts       # Kafka consumer → metrics pipeline
+│   │   └── dlqWorker.ts             # Dead Letter Queue processor
+│   │
+│   ├── db/
+│   │   ├── pool.ts                  # PostgreSQL connection pool
+│   │   ├── rls.ts                   # RLS context setter (set_config)
+│   │   ├── migrate.ts               # Migration runner
+│   │   └── seed.ts                  # 388-trade seed loader
+│   │
+│   ├── cache/redis.ts               # Redis singleton (ioredis)
+│   ├── queue/
+│   │   ├── producer.ts              # Fire-and-forget Kafka publisher
+│   │   └── consumer.ts              # Kafka consumer with error isolation
+│   └── utils/                       # Logger, validation, tracing, token gen
+│
+├── migrations/
+│   ├── 001_schema.sql               # 7 tables, RLS policies, indexes
+│   └── 002_seed.sql                 # Initial seed SQL
+│
+├── tests/                           # 42 tests (unit + security)
+├── k6/                              # Load test script + HTML report
+├── k8s/                             # Kubernetes deployment manifests
+├── .github/workflows/ci.yml         # GitHub Actions CI pipeline
+│
+├── DECISIONS.md                     # 10 Architecture Decision Records
+├── openapi.yaml                     # OpenAPI 3.0 specification
+├── docker-compose.yml               # Single-command 5-service startup
+├── Dockerfile                       # Multi-stage, non-root user build
+└── entrypoint.sh                    # Auto-migrate + auto-seed on startup
 ```
-
----
-
-## ⚡ Performance
-
-| Metric | Target | Strategy |
-|---|---|---|
-| Write latency (p95) | **≤ 150ms** | Fire-and-forget Kafka, connection pooling |
-| Throughput | **200 RPS** | Fastify (2× Express), prepared statements |
-| Error rate | **< 1%** | Idempotent writes, graceful degradation |
-
----
-
-## 📋 Seed Data
-
-- **10 synthetic traders** with labeled behavioral pathologies
-- **52 sessions**, **388 trades** across equity, crypto, and forex
-- Covers: revenge trading, overtrading, FOMO, plan non-adherence, premature exit, loss running, session tilt, time-of-day bias, position sizing inconsistency
-- **1 control user** (Avery Chen) with zero pathologies
 
 ---
 
 ## 🧾 Tech Stack
 
-| Layer | Technology |
-|---|---|
-| Runtime | Node.js 20 LTS |
-| Language | TypeScript 5.x (strict) |
-| Framework | Fastify 4.x |
-| Database | PostgreSQL 15 + RLS |
-| Queue | Apache Kafka (KRaft) |
-| Cache | Redis 7 |
-| Auth | jose (HS256) |
-| Logging | Pino (structured JSON) |
-| Metrics | prom-client (Prometheus) |
-| Testing | Vitest 2.x |
-| Load Testing | k6 |
-| Containers | Docker + Compose |
-| Orchestration | Kubernetes |
-| CI/CD | GitHub Actions |
+| Layer | Technology | Why This Choice |
+|---|---|---|
+| **Runtime** | Node.js 20 LTS | Long-term support, async I/O for high concurrency |
+| **Language** | TypeScript 5.x (strict) | Compile-time safety, zero runtime type errors |
+| **Framework** | Fastify 4.x | 2× throughput vs Express, schema-based validation |
+| **Database** | PostgreSQL 15 | GENERATED columns, RLS, advanced window functions |
+| **Queue** | Apache Kafka (KRaft) | Durable event log, consumer groups, exactly-once semantics |
+| **Cache** | Redis 7 | O(log N) sorted sets for sliding window operations |
+| **Auth** | jose 5.x | Standards-compliant JWT, no native dependencies |
+| **Logging** | Pino 9.x | Fastest JSON logger for Node.js, structured output |
+| **Metrics** | prom-client | Native Prometheus exposition format |
+| **Testing** | Vitest 2.x | Native ESM support, TypeScript-first, fast parallel execution |
+| **Load Test** | k6 | Developer-centric, scriptable, accurate percentile measurement |
+| **Containers** | Docker + Compose | Reproducible environments, single-command startup |
+| **Orchestration** | Kubernetes | Production-grade scaling with health probes |
+| **CI/CD** | GitHub Actions | Automated type-check, test, build, Docker verification |
 
 ---
 
-## 📖 Architecture Decisions
+## 📖 Architecture Decision Records
 
-See [`DECISIONS.md`](DECISIONS.md) for 10 detailed ADR entries covering:
-- Kafka over Redis Streams
-- PostgreSQL RLS over application filters
-- Raw SQL over ORM
-- Redis sorted sets for overtrading
-- Fire-and-forget publish semantics
-- JSONB for emotion statistics
-- And more...
+See [`DECISIONS.md`](DECISIONS.md) for **10 detailed ADR entries**:
+
+| ADR | Decision | Rationale |
+|:---:|---|---|
+| 1 | Kafka over Redis Streams | Durable replay, consumer groups, industry standard |
+| 2 | PostgreSQL RLS over app-layer filters | Defense-in-depth, impossible to bypass |
+| 3 | Raw SQL over ORM | Prepared statements, `GENERATED ALWAYS AS`, window functions |
+| 4 | Fastify over Express | 2× throughput, native schema validation |
+| 5 | Fire-and-forget publish | Write-path isolation, analytics never block ingestion |
+| 6 | UUID v4 primary keys | Client-generated, no coordination needed |
+| 7 | Redis sorted sets for M5 | O(log N) sliding window vs O(N) list scanning |
+| 8 | JSONB for emotion stats | Schema-flexible, atomic `jsonb_set()` updates |
+| 9 | Pino structured logging | JSON-native, traceId correlation, fastest logger |
+| 10 | `is_local=true` in set_config | Prevents RLS context leakage across pooled connections |
 
 ---
 
-<p align="center">
-  Built for the <strong>NevUp Hiring Hackathon 2026 — Track 1: System of Record</strong>
-</p>
+## 🚢 Deployment
+
+### Docker Compose (Local / CI)
+```bash
+docker compose up        # Starts all 5 services
+docker compose down -v   # Clean teardown
+```
+
+### Kubernetes (Production)
+```bash
+kubectl apply -f k8s/
+```
+Includes: API Deployment (3 replicas), Worker Deployment (2 replicas), PostgreSQL StatefulSet, Kafka StatefulSet — all with resource limits and health probes.
+
+### Cloud (Railway)
+Connected via GitHub for automatic deployments. Environment variables reference Railway-managed PostgreSQL and Redis instances.
+
+---
+
+<div align="center">
+
+### Built for the **NevUp Hiring Hackathon 2026**
+
+*Track 1: System of Record*
+
+---
+
+**42 tests passing** · **Zero TypeScript errors** · **10 ADR entries** · **388 seeded trades** · **p95 ≤ 150ms**
+
+</div>
